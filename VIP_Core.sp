@@ -65,10 +65,11 @@ public void OnPluginStart()
 	
 	HookEvent("round_start", Event_RoundStart);
 	
-	RegConsoleCmd("sm_vipmenu", Command_VipMenu);
+	RegConsoleCmd("sm_vip", Command_VipMenu);
 	
-	RegAdminCmd("sm_vip", Command_VIP, ADMFLAG_ROOT, "VIP Management");
-	RegAdminCmd("sm_addvip", Command_AddVIP, ADMFLAG_ROOT, "This command is used to add a vip using steamid")
+	RegAdminCmd("sm_vipadmin", Command_VIP, ADMFLAG_ROOT, "VIP Management");
+	RegAdminCmd("sm_addvip", Command_AddVIP2, ADMFLAG_ROOT, "在线添加VIP")
+	RegAdminCmd("sm_addvip2", Command_AddVIP, ADMFLAG_ROOT, "离线添加VIP")
 	
 	if (g_bLate)
 		for (int i = 1; i <= MaxClients; i++)if (IsClientInGame(i))OnClientPostAdminCheck(i);
@@ -159,7 +160,7 @@ public Action OnClientSayCommand(int client, const char[] command, const char[] 
 public Action Command_VipMenu(int client, int args)
 {
 	Menu menu = new Menu(Handler_VipMenu);
-	menu.SetTitle("%s VIP Menu (%s days left)\n ", PREFIX_MENU, addCommas(g_aPlayers[client].daysLeft()))
+	menu.SetTitle("%s VIP菜单 (剩余 %s 天)\n ", PREFIX_MENU, addCommas(g_aPlayers[client].daysLeft()))
 	
 	any aResults = 0;
 	Call_StartForward(g_fwdVipMenuOpen);
@@ -225,11 +226,46 @@ public Action Command_AddVIP(int client, int args)
 	}
 	
 	SQL_AddOfflineVIP(szArg, iDuration);
-	CShowActivity2(client, PREFIX_ACTIVITY, "Gave a vip to \x02\"%s\" \x01for \x04%s \x01days.", szArg, addCommas(iDuration));
+	CShowActivity2(client, PREFIX_ACTIVITY, "恭喜 \x02\"%s\" \x01获得 \x04%s \x01天的VIP", szArg, addCommas(iDuration));
 	
 	return Plugin_Handled;
 }
 
+public Action Command_AddVIP2(int client, int args)
+{	
+	char Target[64];
+	char arg1[16];
+	GetCmdArg(1, Target, sizeof(Target));
+	GetCmdArg(2, arg1, sizeof(arg1));
+	int abk = StringToInt(arg1);
+	
+
+	char target_name[MAX_TARGET_LENGTH];
+	int target_list[MAXPLAYERS];
+	int target_count;
+	bool tn_is_ml;
+
+	if ((target_count = ProcessTargetString(
+					Target,
+					client,
+					target_list,
+					MAXPLAYERS,
+					COMMAND_FILTER_NO_BOTS,
+					target_name,
+					sizeof(target_name),
+					tn_is_ml)) <= 0)
+	{
+		ReplyToTargetError(client, target_count);
+		return Plugin_Handled;
+	}
+	for (int i = 0; i < target_count; i++)
+	{
+		PrintToChat(target_list[i],"\n \n \n \n \n \n您的卡密兑换成功！");
+		SQL_AddOfflineVIP2(target_list[i],abk);
+		OnClientPostAdminCheck(target_list[i]);
+	}
+	return Plugin_Handled;
+}
 /* */
 
 /* Menus */
@@ -237,9 +273,9 @@ public Action Command_AddVIP(int client, int args)
 void Menus_ShowMain(int client)
 {
 	Menu menu = new Menu(Handler_MainMenu);
-	menu.SetTitle("%s VIP Management\n ", PREFIX_MENU);
-	menu.AddItem("add", "Add a VIP");
-	menu.AddItem("manage", "Manage VIPs");
+	menu.SetTitle("%s VIP管理菜单\n ", PREFIX_MENU);
+	menu.AddItem("add", "添加VIP");
+	menu.AddItem("manage", "管理VIP");
 	menu.Display(client, MENU_TIME_FOREVER);
 }
 
@@ -369,7 +405,7 @@ public int Handler_PlayerManagement(Menu menu, MenuAction action, int client, in
 			SQL_AddVIP(client);
 			OnClientPostAdminCheck(g_iTarget[client]);
 			
-			CShowActivity2(client, PREFIX_ACTIVITY, "Gave a vip to \x02%N \x01for \x04%s \x01days.", g_iTarget[client], addCommas(g_iDuration[client]));
+			CShowActivity2(client, PREFIX_ACTIVITY, "恭喜 \x02%N \x01获得了 \x04%s \x01天VIP", g_iTarget[client], addCommas(g_iDuration[client]));
 			
 			g_iTarget[client] = -1;
 			g_iDuration[client] = 0;
@@ -546,6 +582,20 @@ void SQL_AddOfflineVIP(char[] auth, int duration)
 	
 	char szQuery[512];
 	SQL_FormatQuery(g_dbConnection, szQuery, sizeof(szQuery), "INSERT INTO `vips` (`auth`, `name`, `expiration`) VALUES ('%s', 'Added Offline', %d) ON DUPLICATE KEY UPDATE `expiration` = %d", auth, iExpiration, iExpiration);
+	g_dbConnection.Query(SQL_CheckForErrors, szQuery);
+}
+
+void SQL_AddOfflineVIP2(client,duration)
+{
+	int oldtime = g_aPlayers[client].daysLeft() + 1;
+	int iExpiration = GetTime() + ((duration+oldtime) * DAY_TO_SECONDS);
+	//以下是测试使用用途
+	//PrintToChatAll("时间输出:%i",iExpiration);
+	//PrintToChatAll("玩家目前拥有的时间输出:%i",g_aPlayers[client].expiration);
+	//PrintToChatAll("旧时间:%i",oldtime);
+	
+	char szQuery[512];
+	SQL_FormatQuery(g_dbConnection, szQuery, sizeof(szQuery), "INSERT INTO `vips` (`auth`, `name`, `expiration`) VALUES ('%s', '%s', %d) ON DUPLICATE KEY UPDATE `expiration` = %d", g_aPlayers[client].auth, g_aPlayers[client].name,iExpiration, iExpiration);
 	g_dbConnection.Query(SQL_CheckForErrors, szQuery);
 }
 
